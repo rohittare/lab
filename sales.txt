@@ -1,0 +1,55 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
+# ---------- 1. Read and pre-process ----------
+df = pd.read_csv("sales_data_sample.csv", encoding="latin1")
+print("Shape:", df.shape)
+print("Missing values:\n", df.isnull().sum()[df.isnull().sum() > 0])
+
+df = df.drop_duplicates()
+
+# Use only columns that describe sales behavior
+features = ["QUANTITYORDERED", "PRICEEACH", "SALES", "MSRP"]
+X = df[features].copy()
+X = X.fillna(X.median())
+
+# ---------- 2. Normalize ----------
+X_scaled = StandardScaler().fit_transform(X)
+
+# ---------- 3. Elbow method ----------
+wcss = []
+K_range = range(1, 11)
+for k in K_range:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    km.fit(X_scaled)
+    wcss.append(km.inertia_)
+
+plt.figure(figsize=(7, 4))
+plt.plot(K_range, wcss, marker="o")
+plt.xlabel("Number of Clusters (K)")
+plt.ylabel("WCSS (Inertia)")
+plt.title("Elbow Method")
+plt.xticks(K_range)
+plt.grid(True)
+plt.show()
+
+# Silhouette score to support the elbow choice
+for k in range(2, 8):
+    labels = KMeans(n_clusters=k, random_state=42, n_init=10).fit_predict(X_scaled)
+    print(f"K = {k}  silhouette = {silhouette_score(X_scaled, labels):.3f}")
+
+# ---------- 4. Apply K-Means with the chosen K ----------
+optimal_k = 4   # set this to the bend you see in the elbow plot
+kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+df["Cluster"] = kmeans.fit_predict(X_scaled)
+
+# ---------- 5. Results ----------
+print("\nRecords in each cluster:")
+print(df["Cluster"].value_counts().sort_index())
+
+print("\nAverage values per cluster:")
+print(df.groupby("Cluster")[features].mean().round(2))

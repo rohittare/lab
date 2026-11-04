@@ -1,0 +1,64 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+
+# ---------- 1. Pre-process the dataset ----------
+df = pd.read_csv("uber.csv")
+df = df.drop(columns=["Unnamed: 0", "key"], errors="ignore")
+
+df["pickup_datetime"] = pd.to_datetime(df["pickup_datetime"], errors="coerce", utc=True)
+df = df.dropna()
+
+# Remove invalid values
+df = df[
+    (df["fare_amount"] > 0) &
+    (df["passenger_count"].between(1, 6)) &
+    (df["pickup_longitude"].between(-75, -72)) &
+    (df["dropoff_longitude"].between(-75, -72)) &
+    (df["pickup_latitude"].between(40, 42)) &
+    (df["dropoff_latitude"].between(40, 42))
+].copy()
+
+# Distance between pickup and drop-off (km) using the haversine formula
+lat1, lon1 = np.radians(df["pickup_latitude"]), np.radians(df["pickup_longitude"])
+lat2, lon2 = np.radians(df["dropoff_latitude"]), np.radians(df["dropoff_longitude"])
+a = np.sin((lat2 - lat1) / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin((lon2 - lon1) / 2) ** 2
+df["distance_km"] = 2 * 6371 * np.arcsin(np.sqrt(a))
+df = df[df["distance_km"] > 0]
+
+# Time features
+df["hour"] = df["pickup_datetime"].dt.hour
+df["day_of_week"] = df["pickup_datetime"].dt.dayofweek
+df["year"] = df["pickup_datetime"].dt.year
+
+X = df[["distance_km", "passenger_count", "hour", "day_of_week", "year",
+        "pickup_longitude", "pickup_latitude",
+        "dropoff_longitude", "dropoff_latitude"]]
+y = df["fare_amount"]
+
+# ---------- 2. Implement the models ----------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+models = {
+    "Linear Regression": LinearRegression(),
+    "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
+}
+
+# ---------- 3. Evaluate and compare ----------
+results = []
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    pred = model.predict(X_test)
+    results.append({
+        "Model": name,
+        "R2": r2_score(y_test, pred),
+        "RMSE": np.sqrt(mean_squared_error(y_test, pred)),
+        "MAE": mean_absolute_error(y_test, pred),
+    })
+
+print(pd.DataFrame(results).round(3).to_string(index=False))

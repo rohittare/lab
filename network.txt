@@ -1,0 +1,64 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import (accuracy_score, precision_score, recall_score,
+                             f1_score, confusion_matrix, classification_report)
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Input, Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
+
+# ---------- 1. Read and pre-process ----------
+df = pd.read_csv("Churn_Modelling.csv")
+print("Shape:", df.shape)
+print("Missing values:", df.isnull().sum().sum())
+print(df["Exited"].value_counts())   # 0 = Stayed, 1 = Left
+
+# Drop identifier columns, they carry no predictive information
+X = df.drop(columns=["RowNumber", "CustomerId", "Surname", "Exited"])
+y = df["Exited"]
+
+# Encode categorical columns
+X = pd.get_dummies(X, columns=["Geography", "Gender"], drop_first=True, dtype=int)
+
+# ---------- 2. Split ----------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# ---------- 3. Normalize ----------
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)   # fit on training data only
+X_test = scaler.transform(X_test)
+
+# ---------- 4. Build the neural network ----------
+model = Sequential([
+    Input(shape=(X_train.shape[1],)),
+    Dense(16, activation="relu"),
+    Dropout(0.2),
+    Dense(8, activation="relu"),
+    Dense(1, activation="sigmoid")        # probability of leaving
+])
+
+model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
+
+early_stop = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
+
+model.fit(
+    X_train, y_train,
+    epochs=50, batch_size=32,
+    validation_split=0.2,
+    callbacks=[early_stop],
+    verbose=0
+)
+
+# ---------- 5. Evaluate ----------
+prob = model.predict(X_test, verbose=0).ravel()
+y_pred = (prob >= 0.5).astype(int)
+
+print("\nAccuracy :", round(accuracy_score(y_test, y_pred), 4))
+print("Precision:", round(precision_score(y_test, y_pred), 4))
+print("Recall   :", round(recall_score(y_test, y_pred), 4))
+print("F1 score :", round(f1_score(y_test, y_pred), 4))
+print("\nConfusion Matrix (rows = actual, cols = predicted):\n",
+      confusion_matrix(y_test, y_pred))
+print("\n", classification_report(y_test, y_pred, target_names=["Stayed", "Left"]))
